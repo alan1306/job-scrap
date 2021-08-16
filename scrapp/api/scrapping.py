@@ -1,5 +1,10 @@
 from bs4 import BeautifulSoup
 from requests_html import HTMLSession
+from pprint import pprint
+import requests
+import extruct
+from w3lib.html import get_base_url
+import keras
 
 s=HTMLSession()
 categories=['business','engineering','design','analyst','movie','singer','dancer','drama','frontend','backend','actor','sales','executive','developer','manager','analytics']
@@ -17,6 +22,29 @@ def get_all_urls(soup):
     for link in soup.find_all('a'):
         links.append(link.get('href'))
     return links
+def get_html(url):
+    """Get raw HTML from a URL."""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '3600',
+        'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0'
+    }
+    req = requests.get(url)
+    return req.text
+def scrape(url):
+    html = get_html(url)
+    metadata = get_metadata(html, url)
+    return metadata
+
+
+
+def get_metadata(html, url):
+    metadata = extruct.extract(html,base_url=get_base_url(url),syntaxes=['json-ld'],uniform=True,)['json-ld']
+    return metadata
+
+
 def get_internshala_details():
     intershala_job_list=[]
     base_url="https://internshala.com"
@@ -30,9 +58,7 @@ def get_internshala_details():
     for job in jobs:
         curr_category=[]
         name=' '.join(job.find('div',{'class':'heading_4_5 profile'}).text.split())
-        for category in categories:
-            if category in name.lower():
-                curr_category.append(category)
+        category=get_categories(name)
         company=' '.join(job.find('div',{'class':'heading_6 company_name'}).text.split())
         location=job.find('a',{'class':'location_link'}).text
         additional_details=job.find_all('div',{'class':'item_body'})
@@ -79,20 +105,19 @@ def get_talentrack_details():
 
     jobs=soup.find_all('div',{'class':'col-xs-4'})[3:13]
     for job in jobs:
-        name=job.find('span',{'class':'job-title'}).text
-        for category in categories:
-            if category in name.lower():
-                curr_category.append(category)
-        location=' '.join(job.find('span',{'class':'job-location'}).text.split()[1:])
-        start_date=job.find('span',{'class':'job-date'}).text.split()[-1]
         detailsUrl=job.find('a',{'class':'min-button-style'})['href']
 
-        r=s.get(base_url+detailsUrl)
-        soup=BeautifulSoup(r.text,'html.parser')
-        details=soup.find('div',{'class':'appjobdetail'})
-        descr=details.find('p',{'class':'pt-10'}).text
-        deadline=details.find_all('td',{'class':'perc60 vtop'})[1].text
-        company=details.find('span',{'class':'rec_det_nam'}).text
+        url=base_url+detailsUrl
+        data=scrape(url)
+        name = data['title']
+        descr = data['description']
+        start_date =data['datePosted']
+        deadline =data['validThrough']
+        company= data['hiringOrganization']
+        if data['jobLocation']:
+            location=data['jobLocation']
+        else:
+            location="None"
         job=Job("talentrack",name,company,location,start_date,descr,deadline)
         talentrack_job_list.append(job)
     links=get_all_urls(soup)
@@ -155,8 +180,10 @@ def get_iimjobs_details():
                 non_interesting_urls.append(link)
     return non_interesting_urls
 
-                
-                
+def get_categories(name):
+    cnn=keras.models.load_model('model.h5')       
+    cat=cnn.predict(name)
+    return cat
 
 
 
